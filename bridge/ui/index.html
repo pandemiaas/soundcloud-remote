@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SoundCloud Remote — мост</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>SoundCloud Remote</h1>
+    <span class="ver" id="version">…</span>
+  </header>
+
+  <section class="card">
+    <div class="row"><span class="dot" id="dot-listen"></span><span id="listen-text">Сервер: …</span></div>
+    <div class="row"><span class="dot" id="dot-ext"></span><span id="ext-text">Расширение SoundCloud: …</span></div>
+    <div class="row"><span class="dot" id="dot-remote"></span><span id="remote-text">Телефон: …</span></div>
+  </section>
+
+  <section class="card track" id="track" hidden>
+    <div class="t" id="t-title"></div>
+    <div class="a" id="t-artist"></div>
+    <div class="a muted"><span id="t-pos"></span> · громкость плеера: <span id="t-vol">—</span></div>
+  </section>
+
+  <section class="card">
+    <div class="label">Системная громкость Windows: <b id="vol-label">—</b></div>
+    <input type="range" id="vol" min="0" max="100" step="1" />
+  </section>
+
+  <section class="card qr-card">
+    <div class="label">Подключение телефона</div>
+    <div id="qr" class="qr"></div>
+    <div class="conn muted" id="conn-info">…</div>
+    <button id="btn-token">Перевыпустить токен</button>
+  </section>
+
+  <footer class="muted">Закрытие окна сворачивает мост в трей · выход — через меню трея</footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

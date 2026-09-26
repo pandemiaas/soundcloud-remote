@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      width: 300px; margin: 0; padding: 14px;
+      font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+      background: #14121f; color: #e8e6f0;
+    }
+    h1 { font-size: 14px; margin: 0 0 10px; color: #ff5500; }
+    .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: #555; }
+    .dot.on { background: #35d07f; }
+    .dot.off { background: #e5484d; }
+    .muted { color: #9a96ad; }
+    .track { margin: 10px 0; padding: 10px; border-radius: 10px; background: #1e1b2e; }
+    .track .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track .a { color: #9a96ad; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .btns { display: flex; gap: 8px; margin-top: 10px; }
+    button {
+      flex: 1; padding: 7px 8px; border: 0; border-radius: 8px; cursor: pointer;
+      background: #2a2740; color: #e8e6f0; font: inherit;
+    }
+    button:hover { background: #363252; }
+    #btn-debug { margin-top: 8px; width: 100%; flex: none; background: #221f33; }
+    pre {
+      margin: 8px 0 0; padding: 8px; border-radius: 8px; background: #0f0d18;
+      color: #b9b5cc; font: 11px/1.5 Consolas, monospace; white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>SoundCloud Remote</h1>
+
+  <div class="row"><span class="dot" id="dot-bridge"></span><span id="bridge-text">Мост: …</span></div>
+  <div class="row"><span class="dot" id="dot-sc"></span><span id="sc-text">SoundCloud: …</span></div>
+
+  <div class="track" id="track" hidden>
+    <div class="t" id="t-title"></div>
+    <div class="a" id="t-artist"></div>
+    <div class="a muted" id="t-pos"></div>
+  </div>
+
+  <div class="muted" id="err" hidden></div>
+
+  <div class="btns">
+    <button id="btn-open">Открыть SoundCloud</button>
+    <button id="btn-options">Настройки</button>
+  </div>
+
+  <button id="btn-debug">Диагностика</button>
+  <pre id="debug" hidden></pre>
+
+  <script src="popup.js"></script>
+</body>
+</html>

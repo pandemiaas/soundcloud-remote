@@ -1,0 +1,32 @@
+name: bridge-ci
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "bridge/**"
+      - ".github/workflows/bridge-ci.yml"
+  pull_request:
+    paths:
+      - "bridge/**"
+
+jobs:
+  test:
+    name: Smoke-test bridge (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps (wheels only)
+        run: pip install websockets qrcode pycaw comtypes
+
+      - name: Syntax check
+        run: python -m compileall bridge
+
+      - name: Protocol smoke test
+        run: python bridge/tests/smoke.py

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>SoundCloud Remote — настройки</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      max-width: 620px; margin: 40px auto; padding: 0 20px;
+      font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+      background: #14121f; color: #e8e6f0;
+    }
+    h1 { font-size: 20px; color: #ff5500; }
+    label { display: block; margin: 18px 0 6px; font-weight: 600; }
+    input {
+      width: 100%; box-sizing: border-box; padding: 10px 12px;
+      border: 1px solid #363252; border-radius: 10px;
+      background: #1e1b2e; color: #e8e6f0; font: inherit;
+    }
+    .btns { display: flex; gap: 10px; margin-top: 20px; }
+    button {
+      padding: 9px 16px; border: 0; border-radius: 10px; cursor: pointer;
+      background: #ff5500; color: #fff; font: inherit; font-weight: 600;
+    }
+    button.secondary { background: #2a2740; color: #e8e6f0; }
+    button:hover { filter: brightness(1.1); }
+    .muted { color: #9a96ad; font-size: 12.5px; }
+    #status { margin-top: 14px; min-height: 20px; }
+    .ok { color: #35d07f; }
+    .bad { color: #e5484d; }
+  </style>
+</head>
+<body>
+  <h1>Настройки SoundCloud Remote</h1>
+
+  <label for="bridgeUrl">Адрес ПК-моста (WebSocket)</label>
+  <input id="bridgeUrl" type="text" spellcheck="false"
+         placeholder="ws://127.0.0.1:8765/ws" />
+  <p class="muted">
+    По умолчанию мост слушает <code>ws://127.0.0.1:8765/ws</code> на том же ПК.
+    Менять нужно, только если вы сменили порт моста.
+  </p>
+
+  <div class="btns">
+    <button id="save">Сохранить</button>
+    <button id="test" class="secondary">Проверить соединение</button>
+  </div>
+
+  <div id="status"></div>
+
+  <p class="muted">
+    Токен для расширения не нужен: соединение идёт через loopback
+    (127.0.0.1) и принимается мостом без токена. Токен требуется только
+    телефону — он зашит в QR-код подключения.
+  </p>
+
+  <script src="options.js"></script>
+</body>
+</html>

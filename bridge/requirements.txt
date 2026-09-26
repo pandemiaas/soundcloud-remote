@@ -1,0 +1,7 @@
+websockets>=12
+pywebview>=5.0
+qrcode>=7.4
+pycaw>=20240210
+comtypes>=1.2
+pystray>=0.19
+pillow>=10.0
