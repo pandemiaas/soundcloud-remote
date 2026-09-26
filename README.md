@@ -37,7 +37,7 @@ Windows), обложка/название/исполнитель/прогрес�
 | Протокол SCR-1 | ✅ |
 | Chrome-расширение | ✅ (Этап 1) |
 | ПК-мост (Python) | ✅ Этап 2–3: сервер, роли, токен, громкость, окно + QR, трей; smoke 15/15 |
-| Android-приложение | ✅ код Этапа 4–5 готов; APK собирает GitHub Actions (artifacts/Releases по тегу `android-v*`) |
+| Android-приложение | ✅ собрано и опубликовано: [Release android-v0.4.0](https://github.com/pandemiaas/soundcloud-remote/releases/tag/android-v0.4.0) (unit-тесты ✅) |
 
 ## Быстрый старт
 
