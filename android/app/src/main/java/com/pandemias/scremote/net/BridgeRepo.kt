@@ -8,7 +8,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,7 +63,8 @@ object BridgeRepo {
 
     private suspend fun reconnectLoop() {
         var backoff = 1000L
-        while (coroutineContext.isActive && !manualStop) {
+        // отмена цикла происходит через delay/receive при cancel — флага достаточно
+        while (!manualStop) {
             val opened = CompletableDeferred<Boolean>()
             val down = Channel<Unit>(Channel.CONFLATED)
 
