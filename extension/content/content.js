@@ -164,18 +164,25 @@
   }
 
   function extractTitle(link) {
+    // Полное название SoundCloud держит в title-атрибуте ("Artist - Title"),
+    // а видимый текст в бейдже может быть обрезан (обрывался прямо на тире).
+    // Поэтому первичен атрибут: берём часть после " - ", целиком.
     if (!link) return '';
-    // Внутри ссылки лежит чистое название; атрибут title — это "Artist - Title"
+    const attr = norm(link.getAttribute('title'));
     const inner = link.querySelector(
       '.playbackSoundBadge__titleTextContainer, .title, .sc-truncate'
     );
-    if (inner) {
-      const t = norm(inner.textContent);
-      if (t) return t;
+    const innerText = inner ? norm(inner.textContent) : '';
+
+    let title = '';
+    if (attr && attr.includes(' - ')) {
+      title = attr.slice(attr.indexOf(' - ') + 3).trim();
+    } else if (attr) {
+      title = attr;
     }
-    const attr = link.getAttribute('title');
-    if (attr && norm(attr)) return norm(attr);
-    return norm(link.textContent);
+    // видимый текст доверяем, только если он не короче полного
+    if (innerText && innerText.length >= title.length) title = innerText;
+    return title || innerText || norm(link.textContent);
   }
 
   function extractArtist() {
@@ -259,14 +266,10 @@
     const media = getMedia();
     const title = extractTitle(pfirst(SEL.SELECTORS.title));
     const artist = extractArtist();
-    // SoundCloud часто даёт заголовок "Artist - Title" — убираем дубль исполнителя
-    const cleanTitle = (artist && title.toLowerCase().startsWith(artist.toLowerCase() + ' - '))
-      ? title.slice(artist.length + 3).trim()
-      : title;
-    const rawTitle = cleanTitle || artist;
+    const rawTitle = title || artist;
     const track = rawTitle
       ? {
-          title: cleanTitle || artist,
+          title: title || artist,
           artist: artist || '',
           artwork: extractArtwork(),
           liked: readLiked(pfirst(SEL.SELECTORS.likeButton)),

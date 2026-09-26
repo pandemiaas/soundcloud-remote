@@ -55,11 +55,13 @@
       '.playbackSoundBadge .soundTitle__username',
     ],
 
-    /** Обложка текущего трека (img в бейдже). */
+    /** Обложка текущего трека (img или span с background-image). */
     artwork: [
       '.playbackSoundBadge__titleLink + div img',
       '.playbackSoundBadge__avatar img',
       '.playbackSoundBadge span[role="img"] img',
+      '.playbackSoundBadge span.sc-artwork',
+      '.playbackSoundBadge span[style*="background-image"]',
       '.playbackSoundBadge img',
     ],
 

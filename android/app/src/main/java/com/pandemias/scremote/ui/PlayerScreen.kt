@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -36,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,19 +53,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.pandemias.scremote.net.BridgeRepo
+import com.pandemias.scremote.net.UiState
 import kotlinx.coroutines.delay
 
 private fun fmt(ms: Long): String {
-    val total = (ms.coerceAtLeast(0)) / 1000
+    val total = ms.coerceAtLeast(0) / 1000
     val h = total / 3600
     val m = (total % 3600) / 60
-    val s = (total % 60)
+    val s = total % 60
     return if (h > 0) "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
     else "$m:${s.toString().padStart(2, '0')}"
 }
+
+@Composable
+private fun accentSliderColors() = SliderDefaults.colors(
+    thumbColor = MaterialTheme.colorScheme.primary,
+    activeTrackColor = MaterialTheme.colorScheme.primary,
+    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+)
 
 @Composable
 fun PlayerScreen() {
@@ -87,38 +99,43 @@ fun PlayerScreen() {
         if (duration > 0) raw.coerceIn(0L, duration) else raw.coerceAtLeast(0L)
     }
 
-    if (landscape) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            ArtworkView(state.track?.artwork, Modifier.weight(0.42f).fillMaxHeight())
-            Column(
-                modifier = Modifier
-                    .weight(0.58f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.Center,
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .safeDrawingPadding()
+            .padding(top = 10.dp, start = 18.dp, end = 18.dp, bottom = 8.dp),
+    ) {
+        if (landscape) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                Controls(state, shownPos, duration, compact = true)
+                ArtworkView(state.track?.artwork, Modifier.weight(0.42f).fillMaxHeight())
+                Column(
+                    modifier = Modifier
+                        .weight(0.58f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Controls(state, shownPos, duration, compact = true)
+                }
             }
-        }
-    } else {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            ArtworkView(
-                state.track?.artwork,
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f),
-            )
-            Spacer(Modifier.height(14.dp))
-            Controls(state, shownPos, duration, compact = false)
+        } else {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                ArtworkView(
+                    state.track?.artwork,
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .aspectRatio(1f),
+                )
+                Spacer(Modifier.height(16.dp))
+                Controls(state, shownPos, duration, compact = false)
+            }
         }
     }
 }
@@ -128,7 +145,7 @@ private fun ArtworkView(artwork: String?, modifier: Modifier) {
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(22.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
@@ -143,7 +160,7 @@ private fun ArtworkView(artwork: String?, modifier: Modifier) {
             Icon(
                 Icons.Filled.MusicNote,
                 contentDescription = null,
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier.size(72.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -151,22 +168,28 @@ private fun ArtworkView(artwork: String?, modifier: Modifier) {
 }
 
 @Composable
-private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, duration: Long, compact: Boolean) {
+private fun Controls(state: UiState, shownPos: Long, duration: Long, compact: Boolean) {
     val track = state.track
     val caps = state.caps
-    val has: (String) -> Boolean = { c -> caps.contains(c) }
+    // пока расширение не прислало caps — считаем всё доступным
+    val has: (String) -> Boolean = { c -> caps.isEmpty() || caps.contains(c) }
 
     // --- заголовок ---
     Text(
         track?.title ?: "Нет трека",
         style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onBackground,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth(),
     )
     Text(
-        track?.artist ?: "—",
+        track?.artist?.ifBlank { "—" } ?: "—",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth(),
     )
 
     if (!state.extConnected) {
@@ -183,11 +206,21 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
     // --- прогресс / seek ---
     var dragging by remember { mutableStateOf(false) }
     var dragPos by remember { mutableLongStateOf(0L) }
-    Text(
-        "${fmt(shownPos)} / ${fmt(duration)}",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            fmt(shownPos),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            fmt(duration),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     Slider(
         value = (if (dragging) dragPos else shownPos).toFloat(),
         onValueChange = {
@@ -200,55 +233,86 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
         },
         valueRange = 0f..(if (duration > 0) duration.toFloat() else 1f),
         enabled = has("seek") && duration > 0,
+        colors = accentSliderColors(),
     )
 
     // --- транспорт ---
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = { BridgeRepo.prev() }, enabled = has("next")) {
-            Icon(Icons.Filled.SkipPrevious, "Назад", modifier = Modifier.size(38.dp))
+        FilledIconButton(
+            onClick = { BridgeRepo.prev() },
+            enabled = has("next"),
+            modifier = Modifier.size(56.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onBackground,
+            ),
+        ) {
+            Icon(Icons.Filled.SkipPrevious, "Предыдущий", modifier = Modifier.size(30.dp))
         }
         FilledIconButton(
             onClick = { if (state.playing) BridgeRepo.pause() else BridgeRepo.play() },
             enabled = has("play"),
-            modifier = Modifier.size(74.dp),
+            modifier = Modifier.size(80.dp),
+            shape = CircleShape,
             colors = IconButtonDefaults.filledIconButtonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
             ),
         ) {
             Icon(
                 if (state.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                "Play/Pause",
-                modifier = Modifier.size(44.dp),
+                "Играть/Пауза",
+                modifier = Modifier.size(46.dp),
             )
         }
-        IconButton(onClick = { BridgeRepo.next() }, enabled = has("next")) {
-            Icon(Icons.Filled.SkipNext, "Вперёд", modifier = Modifier.size(38.dp))
+        FilledIconButton(
+            onClick = { BridgeRepo.next() },
+            enabled = has("next"),
+            modifier = Modifier.size(56.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onBackground,
+            ),
+        ) {
+            Icon(Icons.Filled.SkipNext, "Следующий", modifier = Modifier.size(30.dp))
         }
     }
 
-    Spacer(Modifier.height(if (compact) 4.dp else 8.dp))
+    Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
 
-    // --- like / repeat / shuffle ---
+    // --- like / repeat / shuffle: круглые кнопки с подсветкой активного ---
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
     ) {
-        IconButton(onClick = { BridgeRepo.like(null) }, enabled = has("like")) {
-            val liked = track?.liked == true
+        val liked = track?.liked == true
+        FilledIconButton(
+            onClick = { BridgeRepo.like(null) },
+            enabled = has("like"),
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = if (liked) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (liked) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onBackground,
+            ),
+        ) {
             Icon(
                 if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                 "Лайк",
-                tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
 
         val mode = state.repeat ?: "off"
-        IconButton(
+        FilledIconButton(
             onClick = {
                 val nextMode = when (mode) {
                     "off" -> "all"
@@ -258,6 +322,14 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
                 BridgeRepo.setRepeat(nextMode)
             },
             enabled = has("repeat"),
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = if (mode != "off") MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (mode != "off") MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onBackground,
+            ),
         ) {
             Icon(
                 when (mode) {
@@ -266,19 +338,27 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
                     else -> Icons.Filled.Repeat
                 },
                 "Повтор",
-                tint = if (mode != "off") MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
 
         val shOn = state.shuffle == true
-        IconButton(onClick = { BridgeRepo.setShuffle(!shOn) }, enabled = has("shuffle")) {
+        FilledIconButton(
+            onClick = { BridgeRepo.setShuffle(!shOn) },
+            enabled = has("shuffle"),
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = if (shOn) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (shOn) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onBackground,
+            ),
+        ) {
             Icon(
                 Icons.Filled.Shuffle,
                 "Перемешать",
-                tint = if (shOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
     }
@@ -292,6 +372,8 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
     Text(
         "Системная громкость: " + (if (volDragging) volLocal.toInt() else systemVol.toInt()) + "%",
         style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
     )
     Slider(
         value = if (volDragging) volLocal else systemVol,
@@ -304,6 +386,7 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
             BridgeRepo.volumeSystem(volLocal.toInt())
         },
         valueRange = 0f..100f,
+        colors = accentSliderColors(),
     )
 
     if (has("player_volume")) {
@@ -313,6 +396,8 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
         Text(
             "Громкость SoundCloud: " + (if (pvDragging) pvLocal.toInt() else playerVol.toInt()) + "%",
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
         )
         Slider(
             value = if (pvDragging) pvLocal else playerVol,
@@ -325,17 +410,28 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
                 BridgeRepo.volumePlayer(pvLocal.toInt())
             },
             valueRange = 0f..100f,
-            enabled = true,
+            colors = accentSliderColors(),
         )
     }
 
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(8.dp))
 
     // --- статус и отключение ---
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        val connected = state.extConnected
+        Text(
+            if (connected) "●" else "○",
+            color = if (connected) MaterialTheme.colorScheme.tertiary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.width(6.dp))
         Text(
             buildString {
-                append(if (state.extConnected) "● " else "○ ")
                 append("мост: ")
                 append(state.device ?: "ПК")
                 state.bridgeVersion?.let { append(" · v$it") }
@@ -343,13 +439,13 @@ private fun Controls(state: com.pandemias.scremote.net.UiState, shownPos: Long, 
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.width(12.dp))
-        IconButton(onClick = { BridgeRepo.disconnect() }) {
+        Spacer(Modifier.width(10.dp))
+        IconButton(onClick = { BridgeRepo.disconnect() }, modifier = Modifier.size(28.dp)) {
             Icon(
                 Icons.Filled.LinkOff,
                 "Отключиться",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
             )
         }
     }
