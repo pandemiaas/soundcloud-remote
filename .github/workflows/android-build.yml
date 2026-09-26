@@ -13,6 +13,8 @@ jobs:
   build:
     name: APK (assembleRelease + unit tests)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # публикация APK в Releases по тегу
     steps:
       - uses: actions/checkout@v5
 
