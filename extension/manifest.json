@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SoundCloud Remote",
   "short_name": "SC Remote",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "Мост между плеером SoundCloud и приложением-пультом на телефоне (SoundCloud Remote).",
   "minimum_chrome_version": "116",
   "icons": {

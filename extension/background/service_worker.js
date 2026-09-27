@@ -178,23 +178,40 @@ async function findScTab() {
 async function askContent(msg) {
   const tab = await findScTab();
   if (!tab) return { ok: false, code: 'unavailable', message: 'вкладка SoundCloud не найдена' };
+
+  const myVersion = chrome.runtime.getManifest().version;
+
+  const send = async () => chrome.tabs.sendMessage(tab.id, msg);
+
+  const reinject = async () => {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content/selectors.js', 'content/content.js'],
+    });
+    await new Promise((r) => setTimeout(r, 250));
+  };
+
+  // Старый экземпляр контент-скрипта может быть жив, но не знать новых
+  // сообщений — тогда sendMessage вернёт undefined без ошибки. Поэтому
+  // сверяем версию и при расхождении принудительно переинжектим.
   try {
-    const resp = await chrome.tabs.sendMessage(tab.id, msg);
+    const ver = await send({ t: '__version' });
+    if (!ver || ver.version !== myVersion) {
+      await reinject();
+    }
+  } catch (e) {
+    await reinject().catch(() => {});
+  }
+
+  try {
+    const resp = await send(msg);
+    if (resp === undefined) {
+      // скрипт на вкладке есть, но не отвечает на это сообщение
+      return { ok: false, code: 'unavailable', message: 'контент-скрипт не отвечает (обновите вкладку F5)' };
+    }
     return resp || { ok: true };
   } catch (e) {
-    // content script может отсутствовать (вкладка открыта до установки
-    // расширения) — переинжектим и пробуем ещё раз
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content/selectors.js', 'content/content.js'],
-      });
-      await new Promise((r) => setTimeout(r, 150));
-      const resp = await chrome.tabs.sendMessage(tab.id, msg);
-      return resp || { ok: true };
-    } catch (e2) {
-      return { ok: false, code: 'unavailable', message: String((e2 && e2.message) || e2) };
-    }
+    return { ok: false, code: 'unavailable', message: String((e && e.message) || e) };
   }
 }
 

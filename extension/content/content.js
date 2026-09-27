@@ -13,8 +13,15 @@
 (function () {
   'use strict';
 
-  if (window.__SCR_CONTENT_INJECTED) return;
-  window.__SCR_CONTENT_INJECTED = true;
+  // При переинъекции (обновление расширения / догрузка на старую вкладку)
+  // обязательно заменяем старый экземпляр, иначе на вкладке останется
+  // работать устаревший код: у него нет новых селекторов, нет диагностики
+  // и он не отвечает на новые сообщения («Нет ответа от вкладки»).
+  if (window.__SCR_CONTENT_CLEANUP) {
+    try { window.__SCR_CONTENT_CLEANUP(); } catch (e) { /* noop */ }
+  }
+  window.__SCR_CONTENT_CLEANUP = null;
+  window.__SCR_VERSION = '0.1.7';
 
   const SEL = window.__SCR_SELECTORS;
   if (!SEL) {
@@ -33,6 +40,7 @@
   let fullTimer = null;
   let observer = null;
   let posSource = '—'; // 'aria' | 'text' | 'media' — для диагностики
+  const timers = [];   // интервалы этого экземпляра (для уборки при переинъекции)
 
   // ---------------------------------------------------------------- utils
 
@@ -606,6 +614,9 @@
 
   function handleCommand(msg, sendResponse) {
     switch (msg.t) {
+      // проверка версии: service worker понимает, что на вкладке старый код
+      case '__version':
+        return sendResponse({ ok: true, version: window.__SCR_VERSION });
       // диагностика отвечает асинхронно — оборачиваем в {ok, snapshot}
       case '__debug_snapshot':
         return debugSnapshot((snap) => sendResponse({ ok: true, snapshot: snap }));
@@ -645,16 +656,28 @@
     setTimeout(() => { pushFull(true); sendResponse({ ok: true }); }, SETTLE_MS);
   }
 
-  // ------------------------------------------------------------------ init
-
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Именованный слушатель — чтобы при переинъекции старый экземпляр мог
+  // снять свой, не трогая свежий.
+  function onMessage(msg, _sender, sendResponse) {
     try {
       handleCommand(msg || {}, sendResponse);
     } catch (e) {
       try { sendResponse({ ok: false, code: 'internal', message: String(e) }); } catch (_) {}
     }
     return true; // ответ может прийти асинхронно
-  });
+  }
+
+  // ------------------------------------------------------------------ init
+
+  // Регистрируем уборку: при следующей инъекции старый экземпляр снимет
+  // свои таймеры/наблюдатель/слушатель, чтобы не дублировать работу.
+  window.__SCR_CONTENT_CLEANUP = function () {
+    try { if (observer) observer.disconnect(); } catch (e) { /* noop */ }
+    for (const t of timers) { try { clearInterval(t); } catch (e) { /* noop */ } }
+    try { chrome.runtime.onMessage.removeListener(onMessage); } catch (e) { /* noop */ }
+  };
+
+  chrome.runtime.onMessage.addListener(onMessage);
 
   watchDom();
   getMedia();
@@ -662,16 +685,16 @@
   sendToSw({ event: 'caps', data: computeCaps() });
   sendToSw({ event: 'ext', data: { connected: true } });
 
-  setInterval(() => {
+  timers.push(setInterval(() => {
     try { pushTick(); pushFull(false); }
     catch (e) { console.error('[SC Remote] tick error:', e); }
-  }, TICK_MS);
-  setInterval(() => {
+  }, TICK_MS));
+  timers.push(setInterval(() => {
     try {
       if (!playerRoot()) watchDom(); // SPA: панель плеера пересоздаётся
       getMedia();
     } catch (e) { console.error('[SC Remote] recheck error:', e); }
-  }, RECHECK_MS);
+  }, RECHECK_MS));
 
-  console.info('[SC Remote] content script готов');
+  console.info('[SC Remote] content script готов, v' + window.__SCR_VERSION);
 })();
