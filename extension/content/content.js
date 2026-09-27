@@ -519,20 +519,41 @@
     if (queueToggle) realClick(queueToggle);
   }
 
-  function debugSnapshot() {
+  /**
+   * Диагностика + живой тест клика: жмём play и смотрим, изменилось ли
+   * состояние. Ответ уходит асинхронно через cb.
+   */
+  function debugSnapshot(cb) {
     const found = {};
+    const matched = {};
     for (const name of Object.keys(SEL.SELECTORS)) {
       const list = SEL.SELECTORS[name];
-      if (Array.isArray(list)) found[name] = pfirst(list) ? true : false;
+      if (!Array.isArray(list)) continue;
+      const el = pfirst(list);
+      found[name] = !!el;
+      if (el) {
+        matched[name] = list.find((s) => {
+          try { return el.matches(s); } catch (e) { return false; }
+        }) || '?';
+      }
     }
+
     const media = getMedia();
-    return {
+    const playBtn = pfirst(SEL.SELECTORS.playButton);
+    const playingBefore = isPlaying();
+
+    const base = {
       selectorsVersion: SEL.version,
       url: location.href,
       playerRoot: !!playerRoot(),
+      playerRootSel: (() => {
+        const r = playerRoot();
+        return r ? (r.className || r.tagName) : null;
+      })(),
       posSource,
       time: readTime(),
       found,
+      matched,
       media: media ? {
         tag: media.tagName,
         duration: media.duration,
@@ -543,11 +564,51 @@
       } : null,
       state: computeState(),
       caps: computeCaps(),
+      volumeAria: (() => {
+        const w = pfirst(SEL.SELECTORS.volumeSliderWrap);
+        return w ? { now: w.getAttribute('aria-valuenow'), max: w.getAttribute('aria-valuemax') } : null;
+      })(),
+      timelineAria: (() => {
+        const w = pfirst(SEL.SELECTORS.timelineProgress);
+        return w ? { now: w.getAttribute('aria-valuenow'), max: w.getAttribute('aria-valuemax') } : null;
+      })(),
+      artwork: extractArtwork(),
     };
+
+    if (!playBtn) {
+      cb({ ...base, clickTest: { playButtonFound: false } });
+      return;
+    }
+
+    const r = playBtn.getBoundingClientRect();
+    const clickInfo = {
+      playButtonFound: true,
+      tag: playBtn.tagName,
+      cls: String(playBtn.className).slice(0, 60),
+      rect: `${Math.round(r.width)}x${Math.round(r.height)}`,
+      visible: r.width > 0 && r.height > 0,
+      playingBefore,
+    };
+
+    realClick(playBtn);
+    setTimeout(() => {
+      const playingAfter = isPlaying();
+      cb({
+        ...base,
+        clickTest: {
+          ...clickInfo,
+          playingAfter,
+          worked: playingBefore !== playingAfter,
+        },
+      });
+    }, 700);
   }
 
   function handleCommand(msg, sendResponse) {
     switch (msg.t) {
+      // диагностика отвечает асинхронно — оборачиваем в {ok, snapshot}
+      case '__debug_snapshot':
+        return debugSnapshot((snap) => sendResponse({ ok: true, snapshot: snap }));
       case 'play': return clickPlay(true, sendResponse);
       case 'pause': return clickPlay(false, sendResponse);
       case 'toggle': return clickSimple(SEL.SELECTORS.playButton, sendResponse);
@@ -564,9 +625,6 @@
       }
       case '__hello_info': {
         return sendResponse({ ok: true, caps: computeCaps(), state: computeState() });
-      }
-      case '__debug_snapshot': {
-        return sendResponse({ ok: true, snapshot: debugSnapshot() });
       }
       default:
         return sendResponse({ ok: false, code: 'bad_message', message: 'неизвестный t: ' + msg.t });

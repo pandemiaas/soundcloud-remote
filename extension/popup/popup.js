@@ -69,32 +69,45 @@ $('btn-debug').addEventListener('click', () => {
   const box = $('debug');
   if (!box.hidden) { box.hidden = true; return; }
   box.hidden = false;
-  box.textContent = 'Считываю…';
+  box.textContent = 'Считываю… (сейчас расширение нажмёт play для теста)';
   chrome.runtime.sendMessage({ cmd: '__debug' }, (resp) => {
     if (chrome.runtime.lastError || !resp || !resp.ok) {
       box.textContent = 'Нет ответа от вкладки SoundCloud';
       return;
     }
     const s = resp.snapshot;
+    const ct = s.clickTest || {};
     const found = Object.entries(s.found)
       .filter(([, v]) => v)
       .map(([k]) => k)
       .join(', ');
-    const media = s.media
-      ? s.media.tag +
-        ' pos=' + Math.round(s.media.pos || 0) + 's' +
-        ' dur=' + Math.round(s.media.duration || 0) + 'c' +
-        (s.media.paused ? ' [пауза]' : ' [играет]') +
-        ' src=' + (s.media.src || '—')
-      : 'НЕ НАЙДЕН (время из полосы)';
+    const missing = Object.entries(s.found)
+      .filter(([, v]) => !v)
+      .map(([k]) => k)
+      .join(', ');
     const t = s.time || {};
-    box.textContent =
-      'время: pos=' + Math.round((t.position_ms || 0) / 1000) + 's / dur=' +
-        Math.round((t.duration_ms || 0) / 1000) + 's, источник=' + (s.posSource || '—') +
-        ', панель=' + (s.playerRoot ? 'ok' : 'НЕТ') + '\n' +
-      'медиа: ' + media + '\n' +
-      'селекторы: ' + (found || 'ничего') + '\n' +
-      'название: ' + (s.state && s.state.track ? s.state.track.title : '—');
+    const lines = [
+      '=== SC Remote 0.1.5 диагностика ===',
+      'url: ' + s.url,
+      'панель плеера: ' + (s.playerRoot ? 'ok (' + (s.playerRootSel || '') + ')' : 'НЕ НАЙДЕНА'),
+      'время: ' + Math.round((t.position_ms || 0) / 1000) + 's / ' +
+        Math.round((t.duration_ms || 0) / 1000) + 's, источник=' + (s.posSource || '—'),
+      'timeline aria: ' + JSON.stringify(s.timelineAria),
+      'volume aria: ' + JSON.stringify(s.volumeAria),
+      'обложка: ' + (s.artwork ? s.artwork.slice(0, 70) : 'НЕ НАЙДЕНА'),
+      'название: ' + (s.state && s.state.track ? s.state.track.title : '—'),
+      'исполнитель: ' + (s.state && s.state.track ? s.state.track.artist : '—'),
+      '',
+      'НАЙДЕНЫ: ' + (found || 'ничего'),
+      'НЕ НАЙДЕНЫ: ' + (missing || 'нет'),
+      '',
+      '=== ТЕСТ КЛИКА ===',
+      'кнопка play: ' + (ct.playButtonFound ? ct.tag + ' .' + ct.cls : 'НЕ НАЙДЕНА'),
+      'размер: ' + (ct.rect || '—') + (ct.visible ? '' : ' (НЕ ВИДНА)'),
+      'играло до: ' + ct.playingBefore + ' → после: ' + ct.playingAfter,
+      'КЛИК РАБОТАЕТ: ' + (ct.worked ? 'ДА' : 'НЕТ'),
+    ];
+    box.textContent = lines.join('\n');
   });
 });
 
