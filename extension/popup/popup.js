@@ -86,12 +86,13 @@ $('btn-debug').addEventListener('click', () => {
         ' dur=' + Math.round(s.media.duration || 0) + 'c' +
         (s.media.paused ? ' [пауза]' : ' [играет]') +
         ' src=' + (s.media.src || '—')
-      : 'НЕ НАЙДЕН (время берётся из DOM)';
+      : 'НЕ НАЙДЕН (время из полосы)';
+    const t = s.time || {};
     box.textContent =
-      'медиа: ' + media + '\n' +
-      'dom: pos=' + Math.round((s.domPos || 0) / 1000) + 's / dur=' +
-        Math.round((s.domDur || 0) / 1000) + 's, источник=' + (s.posSource || '—') +
+      'время: pos=' + Math.round((t.position_ms || 0) / 1000) + 's / dur=' +
+        Math.round((t.duration_ms || 0) / 1000) + 's, источник=' + (s.posSource || '—') +
         ', панель=' + (s.playerRoot ? 'ok' : 'НЕТ') + '\n' +
+      'медиа: ' + media + '\n' +
       'селекторы: ' + (found || 'ничего') + '\n' +
       'название: ' + (s.state && s.state.track ? s.state.track.title : '—');
   });

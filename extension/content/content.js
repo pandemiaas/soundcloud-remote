@@ -1,12 +1,13 @@
 /**
  * SoundCloud Remote — content script.
  *
- * Живёт во вкладке soundcloud.com:
- *  - читает состояние плеера из DOM и медиа-элемента;
- *  - выполняет команды от моста (приходят через background service worker);
- *  - шлёт события state/tick/caps в service worker.
- *
- * Протокол сообщений — ../PROTOCOL.md (SCR-1). Селекторы — только в selectors.js.
+ * Читает состояние плеера и выполняет команды моста (протокол SCR-1, ../PROTOCOL.md).
+ * Селекторы/приёмы портированы из рабочего оверлея (soundcloud-overlay-main):
+ *  - кнопки SC игнорируют el.click() — нужен полный pointer-цикл с координатами;
+ *  - время: aria-valuenow/aria-valuemax на .playbackTimeline__progressWrapper (секунды);
+ *  - title: .playbackSoundBadge__title aria-label со схлопыванием дублей;
+ *  - обложка: background-image на span внутри .playbackSoundBadge__avatar;
+ *  - repeat: классы m-none/m-one/m-all; лайк: sc-button-selected/m-active.
  */
 /* global chrome */
 (function () {
@@ -22,21 +23,16 @@
   }
 
   const TICK_MS = 1000;        // период tick-событий
-  const RECHECK_MS = 3000;     // переискать панель/медиа-элемент
+  const RECHECK_MS = 3000;     // переискать панель плеера
   const DEBOUNCE_MS = 120;     // антидребезг пересчёта state
   const SETTLE_MS = 200;       // пауза после клика, пока DOM обновится
   const REPEAT_MAX_CLICKS = 4; // максимум докликов до нужного режима повтора
 
-  let mediaEl = null;
   let lastFullKey = '';
   let lastTickKey = '';
   let fullTimer = null;
   let observer = null;
-
-  // Детектор «застрявшего» медиа-элемента: позиция не растёт при игре
-  let lastMediaPos = -1;
-  let stallCount = 0;
-  let posSource = '—'; // 'media' | 'dom' | 'dom-stall' — для диагностики
+  let posSource = '—'; // 'aria' | 'text' | 'media' — для диагностики
 
   // ---------------------------------------------------------------- utils
 
@@ -50,8 +46,8 @@
   /**
    * Поиск элемента НИЖНЕЙ панели плеера (.playControls).
    * На страницах треков есть и другие плееры (большой встроенный плеер
-   * страницы, related tracks) со своими таймлайнами и кнопками — они
-   * стоят раньше в DOM и всегда «на нуле». Сначала ищем строго в панели,
+   * страницы, related tracks) со своими таймлайнами и кнопками — они стоят
+   * раньше в DOM и всегда «на нуле». Сначала ищем строго в панели,
    * и только потом — по всей странице.
    */
   function pfirst(list) {
@@ -86,12 +82,42 @@
     } catch (e) { /* контекст может быть недоступен при выгрузке */ }
   }
 
+  // -------------------------------------------- настоящий клик (как юзер)
+
+  /**
+   * SoundCloud игнорирует el.click() на кнопках плеера — реагирует только
+   * на полную последовательность pointer/mouse событий с координатами.
+   * Если элемент не в layout — фолбэк на el.click().
+   */
+  function realClick(el) {
+    if (!el) return false;
+    let target = el;
+    if (target.tagName !== 'BUTTON' && target.tagName !== 'A') {
+      const inner = target.querySelector('button, a');
+      if (inner) target = inner;
+    }
+    const r = target.getBoundingClientRect();
+    if (!r || !r.width || !r.height) {
+      try { target.click(); } catch (e) { /* noop */ }
+      return true;
+    }
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    const o = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window };
+    target.dispatchEvent(new MouseEvent('pointerdown', o));
+    target.dispatchEvent(new MouseEvent('mousedown', o));
+    target.dispatchEvent(new MouseEvent('pointerup', o));
+    target.dispatchEvent(new MouseEvent('mouseup', o));
+    target.dispatchEvent(new MouseEvent('click', o));
+    return true;
+  }
+
   // ---------------------------------------------------------- media element
+
+  let mediaEl = null;
 
   function getMedia() {
     if (mediaEl && mediaEl.isConnected && !mediaEl.paused) return mediaEl;
-    // Плеер SoundCloud — <video>, но на странице бывают и другие медиа-элементы.
-    // Выбираем самый «живой»: играет > есть позиция > есть длительность.
     let best = null;
     let bestScore = -1;
     document.querySelectorAll('video, audio').forEach((el) => {
@@ -125,18 +151,20 @@
     if (btn.getAttribute('aria-pressed') === 'true' || btn.getAttribute('aria-checked') === 'true') return true;
     if (btn.getAttribute('aria-pressed') === 'false' || btn.getAttribute('aria-checked') === 'false') return false;
     if (matchesAny(btn, SEL.SELECTORS.likePressed)) return true;
-    if (btn.classList.contains('sc-button-selected')) return true;
-    return false;
+    const cl = btn.classList;
+    return cl.contains('sc-button-selected') || cl.contains('m-active');
   }
 
+  /** Режим повтора: SC маркирует .repeatControl классами m-none/m-one/m-all. */
   function readRepeat(btn) {
     if (!btn) return null;
+    const cl = btn.classList;
+    if (cl.contains('m-one')) return 'one';
+    if (cl.contains('m-all')) return 'all';
     if (matchesAny(btn, SEL.SELECTORS.repeatOne)) return 'one';
     if (matchesAny(btn, SEL.SELECTORS.repeatPressed)) return 'all';
-    const cl = btn.classList;
-    if (cl.contains('repeatOne')) return 'one';
-    if (cl.contains('repeat') || cl.contains('m-active') ||
-        cl.contains('sc-button-selected') || cl.contains('repeatControl--active')) return 'all';
+    if (cl.contains('sc-button-selected') || cl.contains('m-active') ||
+        cl.contains('repeatControl--active')) return 'all';
     const label = norm(btn.getAttribute('aria-label') || btn.title).toLowerCase();
     if (/one/.test(label)) return 'one';
     if (/off|выкл/.test(label)) return 'off';
@@ -153,36 +181,25 @@
     if (btn.getAttribute('aria-pressed') === 'true' || btn.getAttribute('aria-checked') === 'true') return true;
     if (btn.getAttribute('aria-pressed') === 'false' || btn.getAttribute('aria-checked') === 'false') return false;
     if (matchesAny(btn, SEL.SELECTORS.shufflePressed)) return true;
-    if (btn.classList.contains('sc-button-selected') || btn.classList.contains('m-active')) return true;
-    return false;
+    const cl = btn.classList;
+    return cl.contains('sc-button-selected') || cl.contains('m-active');
   }
 
-  function readShuffleCached() {
-    const btn = findShuffleButton();
-    const val = readShuffle(btn);
-    return val; // null, если кнопка сейчас не в DOM (панель очереди закрыта)
-  }
-
+  /** Полное название: aria-label/.playbackSoundBadge__title со схлопыванием дублей. */
   function extractTitle(link) {
-    // Полное название SoundCloud держит в title-атрибуте ("Artist - Title"),
-    // а видимый текст в бейдже может быть обрезан (обрывался прямо на тире).
-    // Поэтому первичен атрибут: берём часть после " - ", целиком.
     if (!link) return '';
-    const attr = norm(link.getAttribute('title'));
-    const inner = link.querySelector(
-      '.playbackSoundBadge__titleTextContainer, .title, .sc-truncate'
-    );
-    const innerText = inner ? norm(inner.textContent) : '';
-
-    let title = '';
-    if (attr && attr.includes(' - ')) {
-      title = attr.slice(attr.indexOf(' - ') + 3).trim();
-    } else if (attr) {
-      title = attr;
+    let raw = link.getAttribute('aria-label') || norm(link.textContent);
+    raw = norm(raw);
+    raw = raw.replace(/^Current track\s*:/i, '').trim();
+    // SC дублирует строку целиком: "FooFoo" = "Foo"+"Foo". Схлопываем только
+    // точные половины, иначе реальные треки ("Лето Лето") склеятся неверно.
+    const half = Math.floor(raw.length / 2);
+    if (half >= 3 && raw.length % 2 === 0) {
+      const a = raw.slice(0, half);
+      const b = raw.slice(half);
+      if (a === b) raw = a;
     }
-    // видимый текст доверяем, только если он не короче полного
-    if (innerText && innerText.length >= title.length) title = innerText;
-    return title || innerText || norm(link.textContent);
+    return raw;
   }
 
   function extractArtist() {
@@ -190,14 +207,21 @@
     return el ? norm(el.textContent) : '';
   }
 
+  /** Обложка: background-image на span внутри аватара бейджа (как в оверлее). */
   function extractArtwork() {
-    const img = pfirst(SEL.SELECTORS.artwork);
-    if (!img) return null;
+    const avatar = first(SEL.SELECTORS.artworkAvatar);
+    if (!avatar) return null;
+    const holder = avatar.querySelector('span[style*="background-image"]')
+      || avatar.querySelector('[style*="background-image"]');
     let raw = '';
-    if (img.tagName === 'IMG' && img.src) raw = img.src;
-    else if (img.style && img.style.backgroundImage) {
-      const m = img.style.backgroundImage.match(/url\(["']?([^"']+)["']?\)/);
+    if (holder) {
+      const st = holder.getAttribute('style') || '';
+      const m = st.match(/url\(["']?(https?:[^)"']+)["']?\)/);
       raw = m ? m[1] : '';
+    }
+    if (!raw) {
+      const img = avatar.querySelector('img');
+      if (img && img.src) raw = img.src;
     }
     if (!raw) return null;
     for (const token of SEL.ARTWORK_UPGRADE.from) {
@@ -206,71 +230,90 @@
     return raw;
   }
 
-  function timelineTimes() {
-    // «0:53 … 2:49» из всего таймлайна: первый тайм — прошло, последний — длительность
-    const tl = pfirst(SEL.SELECTORS.timeline);
-    if (!tl) return null;
-    const m = tl.textContent.match(/\d{1,2}:\d{2}/g);
-    return m && m.length ? m : null;
+  function absoluteUrl(link) {
+    if (!link) return null;
+    try { return new URL(link.getAttribute('href') || '', location.origin).href; }
+    catch (e) { return null; }
   }
 
-  function durationFromDom() {
-    const el = pfirst(SEL.SELECTORS.timeDuration);
-    if (el) {
-      const v = parseTime(el.textContent);
-      if (v > 0) return v;
-    }
-    const times = timelineTimes();
-    if (times && times.length > 1) return parseTime(times[times.length - 1]);
-    return 0;
-  }
-
-  function positionFromDom() {
-    const el = pfirst(SEL.SELECTORS.timeElapsed);
-    if (el) {
-      const v = parseTime(el.textContent);
-      if (v > 0) return v;
-    }
-    const times = timelineTimes();
-    if (times) return parseTime(times[0]);
-    return 0;
-  }
+  // ----------------------------------------------- время: 3 источника
 
   /**
-   * Позиция с защитой от «декоративного» медиа-элемента: если воспроизведение
-   * идёт, а currentTime элемента не меняется — читаем время из таймлайна DOM
-   * и сбрасываем кэш, чтобы следующий тик выбрал другого кандидата.
+   * 1) aria-valuenow/aria-valuemax на .playbackTimeline__progressWrapper (секунды)
+   * 2) текстовые таймеры плеера
+   * 3) медиа-элемент
    */
-  function estimatePosition(media) {
-    if (!media) { posSource = 'dom'; return positionFromDom(); }
-    const pos = Math.round((media.currentTime || 0) * 1000);
-    if (pos === lastMediaPos) stallCount += 1;
-    else { stallCount = 0; lastMediaPos = pos; }
-    if (isPlaying() && stallCount >= 3) {
-      if (mediaEl === media) mediaEl = null;
-      posSource = 'dom-stall';
-      return positionFromDom();
+  function readTime() {
+    const wrap = pfirst(SEL.SELECTORS.timelineProgress);
+    if (wrap) {
+      const now = Number(wrap.getAttribute('aria-valuenow'));
+      const max = Number(wrap.getAttribute('aria-valuemax'));
+      if (Number.isFinite(max) && max > 0) {
+        posSource = 'aria';
+        return {
+          position_ms: Math.round((Number.isFinite(now) ? now : 0) * 1000),
+          duration_ms: Math.round(max * 1000),
+        };
+      }
     }
-    posSource = 'media';
-    return pos;
+
+    const times = [];
+    document.querySelectorAll(
+      '.playbackTimeline__timePassed, .playbackTimeline__timeLeft, ' +
+      '.playbackTimeline__duration, .playbackTimeline [class*="time"]'
+    ).forEach((el) => {
+      const m = norm(el.textContent).match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+      if (m) {
+        const h = m[1] ? parseInt(m[1], 10) : 0;
+        times.push((h * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10)));
+      }
+    });
+    if (times.length >= 2) {
+      posSource = 'text';
+      const second = times[times.length - 1];
+      return {
+        position_ms: times[0] * 1000,
+        duration_ms: (second > times[0] ? second : times[0] + second) * 1000,
+      };
+    }
+
+    const media = getMedia();
+    if (media && Number.isFinite(media.duration) && media.duration > 0) {
+      posSource = 'media';
+      return {
+        position_ms: Math.round((media.currentTime || 0) * 1000),
+        duration_ms: Math.round(media.duration * 1000),
+      };
+    }
+
+    posSource = 'none';
+    return { position_ms: 0, duration_ms: 0 };
   }
 
-  function estimateDuration(media) {
-    if (media && Number.isFinite(media.duration) && media.duration > 0) {
-      return Math.round(media.duration * 1000);
+  /** Громкость плеера: aria на .volume__sliderWrapper (0..1), фолбэк — media.volume. */
+  function readPlayerVolume() {
+    const wrap = pfirst(SEL.SELECTORS.volumeSliderWrap);
+    if (wrap) {
+      const va = Number(wrap.getAttribute('aria-valuenow'));
+      const vm = Number(wrap.getAttribute('aria-valuemax')) || 1;
+      if (Number.isFinite(va) && vm > 0) {
+        return Math.round(clamp(va / vm, 0, 1) * 100);
+      }
     }
-    return durationFromDom();
+    const media = getMedia();
+    if (media) return Math.round(clamp(media.volume, 0, 1) * 100);
+    return null;
   }
 
   function computeState() {
-    const media = getMedia();
-    const title = extractTitle(pfirst(SEL.SELECTORS.title));
+    const t = readTime();
+    const title = extractTitle(pfirst(SEL.SELECTORS.playerTitle) ||
+                               pfirst(SEL.SELECTORS.title));
     const artist = extractArtist();
-    const rawTitle = title || artist;
-    const track = rawTitle
+    const track = (title || artist)
       ? {
           title: title || artist,
-          artist: artist || '',
+          artist,
           artwork: extractArtwork(),
           liked: readLiked(pfirst(SEL.SELECTORS.likeButton)),
           url: absoluteUrl(pfirst(SEL.SELECTORS.title)),
@@ -279,25 +322,21 @@
 
     return {
       playing: isPlaying(),
-      position_ms: estimatePosition(media),
-      duration_ms: estimateDuration(media),
-      volume_player: media ? Math.round(clamp(media.volume, 0, 1) * 100) : null,
+      position_ms: t.position_ms,
+      duration_ms: t.duration_ms,
+      volume_player: readPlayerVolume(),
       repeat: readRepeat(pfirst(SEL.SELECTORS.repeatButton)),
-      shuffle: readShuffleCached(),
+      shuffle: findShuffleButton() ? readShuffle(findShuffleButton()) : null,
       track,
     };
-  }
-
-  function absoluteUrl(link) {
-    if (!link) return null;
-    try { return new URL(link.getAttribute('href') || '', location.origin).href; }
-    catch (e) { return null; }
   }
 
   function computeCaps() {
     const caps = [];
     if (pfirst(SEL.SELECTORS.title)) caps.push('metadata');
-    if (getMedia()) caps.push('position', 'seek', 'player_volume');
+    if (pfirst(SEL.SELECTORS.timelineProgress) || getMedia()) {
+      caps.push('position', 'seek', 'player_volume');
+    }
     if (pfirst(SEL.SELECTORS.playButton)) caps.push('play', 'toggle');
     if (pfirst(SEL.SELECTORS.nextButton) || pfirst(SEL.SELECTORS.prevButton)) caps.push('next');
     if (pfirst(SEL.SELECTORS.likeButton)) caps.push('like');
@@ -323,12 +362,12 @@
   }
 
   function pushTick() {
-    const media = getMedia();
     const playing = isPlaying();
+    const t = readTime();
     const data = {
-      position_ms: estimatePosition(media),
+      position_ms: t.position_ms,
       playing,
-      volume_player: media ? Math.round(clamp(media.volume, 0, 1) * 100) : null,
+      volume_player: readPlayerVolume(),
     };
     const key = JSON.stringify(data);
     if (key === lastTickKey) return;
@@ -345,10 +384,8 @@
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ['class', 'style', 'title', 'aria-label', 'aria-checked', 'aria-pressed'],
+      attributeFilter: ['class', 'style', 'title', 'aria-label', 'aria-checked', 'aria-pressed', 'aria-valuenow', 'aria-valuemax'],
     };
-    // Наблюдаем и нижнюю панель, и панель очереди (там живёт shuffle);
-    // если обе ещё не отрисовались — следим за всем документом.
     const panel = first(SEL.SELECTORS.playerControls);
     const queue = first(SEL.SELECTORS.queuePanel);
     if (panel) observer.observe(panel, opts);
@@ -358,36 +395,62 @@
 
   // -------------------------------------------------------------- commands
 
-  function clickPlay(target, sendResponse) {
-    const btn = pfirst(SEL.SELECTORS.playButton);
-    if (!btn) return sendResponse({ ok: false, code: 'unavailable', message: 'кнопка play не найдена' });
-    if (isPlaying() !== target) btn.click();
-    setTimeout(() => { pushFull(true); sendResponse({ ok: true, playing: isPlaying() }); }, SETTLE_MS);
-  }
-
-  function clickSimple(list, sendResponse) {
-    const el = pfirst(list);
-    if (!el) return sendResponse({ ok: false, code: 'unavailable', message: 'элемент не найден' });
-    el.click();
-    setTimeout(() => { pushFull(true); sendResponse({ ok: true }); }, SETTLE_MS);
-  }
-
+  /** Seek: клик по полосе в нужной пропорции (как в оверлее). */
   function doSeek(ms, sendResponse) {
+    const wrap = pfirst(SEL.SELECTORS.timelineProgress);
+    const rect = wrap && wrap.getBoundingClientRect();
+    if (wrap && rect && rect.width) {
+      const max = Number(wrap.getAttribute('aria-valuemax')) || 0;
+      if (max > 0) {
+        const ratio = clamp(ms / 1000 / max, 0, 1);
+        const x = rect.left + rect.width * ratio;
+        const y = rect.top + rect.height / 2;
+        const o = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window };
+        wrap.dispatchEvent(new MouseEvent('pointerdown', o));
+        wrap.dispatchEvent(new MouseEvent('mousedown', o));
+        wrap.dispatchEvent(new MouseEvent('pointerup', o));
+        wrap.dispatchEvent(new MouseEvent('mouseup', o));
+        wrap.dispatchEvent(new MouseEvent('click', o));
+        setTimeout(() => {
+          pushFull(true);
+          const t = readTime();
+          sendResponse({ ok: true, position_ms: t.position_ms });
+        }, SETTLE_MS);
+        return;
+      }
+    }
+    // фолбэк: прямой currentTime у медиа-элемента
     const media = getMedia();
-    if (!media) return sendResponse({ ok: false, code: 'unavailable', message: 'медиа-элемент не найден' });
+    if (!media) return sendResponse({ ok: false, code: 'unavailable', message: 'полоса и медиа не найдены' });
     const durMs = Number.isFinite(media.duration) ? media.duration * 1000 : null;
-    const target = durMs ? clamp(Number(ms) || 0, 0, durMs) : Math.max(0, Number(ms) || 0);
-    media.currentTime = target / 1000;
+    media.currentTime = (durMs ? clamp(Number(ms) || 0, 0, durMs) : Math.max(0, Number(ms) || 0)) / 1000;
     setTimeout(() => {
       pushFull(true);
       sendResponse({ ok: true, position_ms: Math.round((media.currentTime || 0) * 1000) });
     }, 80);
   }
 
+  /** Громкость плеера: клик по слайдеру громкости в нужной пропорции. */
   function doVolume(value, sendResponse) {
+    const target = clamp(Number(value) || 0, 0, 100);
+    const wrap = pfirst(SEL.SELECTORS.volumeSliderWrap);
+    const rect = wrap && wrap.getBoundingClientRect();
+    if (wrap && rect && rect.width) {
+      const ratio = target / 100;
+      const x = rect.left + rect.width * ratio;
+      const y = rect.top + rect.height / 2;
+      const o = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window };
+      wrap.dispatchEvent(new MouseEvent('pointerdown', o));
+      wrap.dispatchEvent(new MouseEvent('mousedown', o));
+      wrap.dispatchEvent(new MouseEvent('pointerup', o));
+      wrap.dispatchEvent(new MouseEvent('mouseup', o));
+      wrap.dispatchEvent(new MouseEvent('click', o));
+      setTimeout(() => sendResponse({ ok: true, volume_player: readPlayerVolume() }), SETTLE_MS);
+      return;
+    }
     const media = getMedia();
     if (!media) return sendResponse({ ok: false, code: 'unavailable', message: 'медиа-элемент не найден' });
-    media.volume = clamp(Number(value) || 0, 0, 100) / 100;
+    media.volume = target / 100;
     setTimeout(() => sendResponse({ ok: true, volume_player: Math.round(media.volume * 100) }), 80);
   }
 
@@ -398,7 +461,7 @@
     if ((on === true || on === false) && cur === on) {
       return sendResponse({ ok: true, liked: cur });
     }
-    btn.click();
+    realClick(btn);
     setTimeout(() => {
       pushFull(true);
       sendResponse({ ok: true, liked: readLiked(pfirst(SEL.SELECTORS.likeButton)) });
@@ -419,7 +482,7 @@
         return sendResponse({ ok: cur === mode, repeat: cur });
       }
       tries += 1;
-      btn.click();
+      realClick(btn);
       setTimeout(step, SETTLE_MS);
     };
     step();
@@ -432,7 +495,7 @@
       // queue-assist: кнопка shuffle часто живёт в панели очереди
       const queueToggle = pfirst(SEL.SELECTORS.queueToggle);
       if (queueToggle) {
-        queueToggle.click();
+        realClick(queueToggle);
         openedQueue = true;
         await sleep(350);
         btn = findShuffleButton();
@@ -443,7 +506,7 @@
       return sendResponse({ ok: false, code: 'unavailable', message: 'кнопка shuffle не найдена' });
     }
     const cur = readShuffle(btn);
-    if (!((on === true || on === false) && cur === on)) btn.click();
+    if (!((on === true || on === false) && cur === on)) realClick(btn);
     await sleep(SETTLE_MS);
     const result = readShuffle(findShuffleButton());
     if (openedQueue) closeQueue();
@@ -453,7 +516,7 @@
 
   function closeQueue() {
     const queueToggle = pfirst(SEL.SELECTORS.queueToggle);
-    if (queueToggle) queueToggle.click();
+    if (queueToggle) realClick(queueToggle);
   }
 
   function debugSnapshot() {
@@ -467,9 +530,8 @@
       selectorsVersion: SEL.version,
       url: location.href,
       playerRoot: !!playerRoot(),
-      domPos: positionFromDom(),
-      domDur: durationFromDom(),
       posSource,
+      time: readTime(),
       found,
       media: media ? {
         tag: media.tagName,
@@ -509,6 +571,20 @@
       default:
         return sendResponse({ ok: false, code: 'bad_message', message: 'неизвестный t: ' + msg.t });
     }
+  }
+
+  function clickPlay(target, sendResponse) {
+    const btn = pfirst(SEL.SELECTORS.playButton);
+    if (!btn) return sendResponse({ ok: false, code: 'unavailable', message: 'кнопка play не найдена' });
+    if (isPlaying() !== target) realClick(btn);
+    setTimeout(() => { pushFull(true); sendResponse({ ok: true, playing: isPlaying() }); }, SETTLE_MS);
+  }
+
+  function clickSimple(list, sendResponse) {
+    const el = pfirst(list);
+    if (!el) return sendResponse({ ok: false, code: 'unavailable', message: 'элемент не найден' });
+    realClick(el);
+    setTimeout(() => { pushFull(true); sendResponse({ ok: true }); }, SETTLE_MS);
   }
 
   // ------------------------------------------------------------------ init

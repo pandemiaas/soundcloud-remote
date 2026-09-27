@@ -19,14 +19,31 @@
 
     /** Следующий трек. */
     nextButton: [
+      '.skipControl__next',
       '.playControls__next',
       'button[aria-label^="Next"]',
     ],
 
     /** Предыдущий трек. */
     prevButton: [
+      '.skipControl__previous',
       '.playControls__prev',
       'button[aria-label^="Previous"]',
+    ],
+
+    /** Полоса прогресса: aria-valuenow / aria-valuemax (СЕКУНДЫ). */
+    timelineProgress: [
+      '.playbackTimeline__progressWrapper',
+    ],
+
+    /** Слайдер громкости: aria-valuenow / aria-valuemax (0..1). */
+    volumeSliderWrap: [
+      '.volume__sliderWrapper',
+    ],
+
+    /** Заголовок текущего трека (aria-label содержит полное название). */
+    playerTitle: [
+      '.playbackSoundBadge__title',
     ],
 
     /** Прогресс-бар (полоса). Диапазон читаем через aria-valuenow. */
@@ -42,7 +59,7 @@
       '.playing',
     ],
 
-    /** Название трека (ссылка в панели плеера). */
+    /** Ссылка на трек (для поля url). */
     title: [
       '.playbackSoundBadge__titleLink',
       '.playbackSoundBadge a[title]',
@@ -55,19 +72,17 @@
       '.playbackSoundBadge .soundTitle__username',
     ],
 
-    /** Обложка текущего трека (img или span с background-image). */
-    artwork: [
-      '.playbackSoundBadge__titleLink + div img',
-      '.playbackSoundBadge__avatar img',
-      '.playbackSoundBadge span[role="img"] img',
-      '.playbackSoundBadge span.sc-artwork',
-      '.playbackSoundBadge span[style*="background-image"]',
-      '.playbackSoundBadge img',
+    /** Аватар бейджа — внутри span с background-image (обложка). */
+    artworkAvatar: [
+      '.playbackSoundBadge__avatar',
+      '.playbackSoundBadge',
     ],
 
     /** Кнопка лайка текущего трека. */
     likeButton: [
+      '.playbackSoundBadge__like',
       '.playbackSoundBadge__likeButton',
+      '.playbackSoundBadge .sc-button-like',
       '.playControls .likeButton',
       'button[aria-label^="Like"]',
       'button[aria-label^="Unlike"]',
@@ -81,8 +96,10 @@
       '.likeButton--active',
     ],
 
-    /** Кнопка повтора в панели плеера. */
+    /** Кнопка повтора в панели плеера (m-none/m-one/m-all). */
     repeatButton: [
+      '.repeatControl',
+      '.repeat',
       '.playControls__repeat',
       'button[aria-label^="Repeat"]',
     ],
