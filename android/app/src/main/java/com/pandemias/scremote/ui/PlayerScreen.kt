@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.pandemias.scremote.net.ArtworkResolver
 import com.pandemias.scremote.net.BridgeRepo
 import com.pandemias.scremote.net.UiState
 import kotlinx.coroutines.delay
@@ -82,6 +83,17 @@ fun PlayerScreen() {
 
     val landscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    // Обложка: из моста, а если пусто — тянем сами через oEmbed SoundCloud
+    // (DOM-селектор обложки у SoundCloud хрупкий, полагаться только на него нельзя).
+    var artwork by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.track?.artwork, state.track?.url) {
+        val fromBridge = state.track?.artwork
+        artwork = if (!fromBridge.isNullOrBlank()) fromBridge else null
+        if (artwork == null && state.track != null) {
+            artwork = ArtworkResolver.resolve(fromBridge, state.track?.url)
+        }
+    }
 
     // локальный тикер: плавная позиция между tick-сообщениями моста
     var nowTick by remember { mutableLongStateOf(0L) }
@@ -111,7 +123,7 @@ fun PlayerScreen() {
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                ArtworkView(state.track?.artwork, Modifier.weight(0.42f).fillMaxHeight())
+                ArtworkView(artwork, Modifier.weight(0.42f).fillMaxHeight())
                 Column(
                     modifier = Modifier
                         .weight(0.58f)
@@ -127,7 +139,7 @@ fun PlayerScreen() {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 ArtworkView(
-                    state.track?.artwork,
+                    artwork,
                     Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = false)

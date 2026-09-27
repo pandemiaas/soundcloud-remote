@@ -127,18 +127,67 @@ object BridgeRepo {
     }
 
     // ------------------------------------------------------------- команды
+    //
+    // Оптимистичное обновление: UI реагирует мгновенно, не дожидаясь ответа
+    // моста. Если команда не дойдёт, следующее state/tick всё поправит.
 
-    fun seek(ms: Long) = wsSend(ScrProtocol.seek(ms))
-    fun play() = wsSend(ScrProtocol.simple("play"))
-    fun pause() = wsSend(ScrProtocol.simple("pause"))
-    fun toggle() = wsSend(ScrProtocol.simple("toggle"))
+    fun seek(ms: Long) {
+        _state.value = _state.value.copy(positionMs = ms, positionAt = SystemClock.elapsedRealtime())
+        wsSend(ScrProtocol.seek(ms))
+    }
+
+    fun play() {
+        _state.value = _state.value.copy(
+            playing = true, positionAt = SystemClock.elapsedRealtime(),
+        )
+        wsSend(ScrProtocol.simple("play"))
+    }
+
+    fun pause() {
+        _state.value = _state.value.copy(playing = false)
+        wsSend(ScrProtocol.simple("pause"))
+    }
+
+    fun toggle() {
+        val now = !_state.value.playing
+        _state.value = _state.value.copy(
+            playing = now, positionAt = SystemClock.elapsedRealtime(),
+        )
+        wsSend(ScrProtocol.simple("toggle"))
+    }
+
     fun next() = wsSend(ScrProtocol.simple("next"))
     fun prev() = wsSend(ScrProtocol.simple("prev"))
-    fun volumePlayer(v: Int) = wsSend(ScrProtocol.volume("player", v))
-    fun volumeSystem(v: Int) = wsSend(ScrProtocol.volume("system", v))
-    fun like(on: Boolean?) = wsSend(ScrProtocol.like(on))
-    fun setRepeat(mode: String) = wsSend(ScrProtocol.repeatCmd(mode))
-    fun setShuffle(on: Boolean) = wsSend(ScrProtocol.shuffleCmd(on))
+
+    fun volumePlayer(v: Int) {
+        _state.value = _state.value.copy(volumePlayer = v)
+        wsSend(ScrProtocol.volume("player", v))
+    }
+
+    fun volumeSystem(v: Int) {
+        _state.value = _state.value.copy(volumeSystem = v.toFloat())
+        wsSend(ScrProtocol.volume("system", v))
+    }
+
+    fun like(on: Boolean?) {
+        val cur = _state.value.track?.liked
+        val target = on ?: !(cur ?: false)
+        _state.value.track?.let { t ->
+            _state.value = _state.value.copy(track = t.copy(liked = target))
+        }
+        wsSend(ScrProtocol.like(on))
+    }
+
+    fun setRepeat(mode: String) {
+        _state.value = _state.value.copy(repeat = mode)
+        wsSend(ScrProtocol.repeatCmd(mode))
+    }
+
+    fun setShuffle(on: Boolean) {
+        _state.value = _state.value.copy(shuffle = on)
+        wsSend(ScrProtocol.shuffleCmd(on))
+    }
+
     fun sync() = wsSend(ScrProtocol.sync())
 
     fun shutdown() {

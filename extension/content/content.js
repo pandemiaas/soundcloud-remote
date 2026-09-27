@@ -232,9 +232,9 @@
       if (img && img.src) raw = img.src;
     }
     if (!raw) return null;
-    for (const token of SEL.ARTWORK_UPGRADE.from) {
-      if (raw.includes(token)) { raw = raw.replace(token, SEL.ARTWORK_UPGRADE.to); break; }
-    }
+    // ВАЖНО: апгрейд размера НЕ делаем. SoundCloud не гарантирует наличие
+    // -t500x500 для каждого ассета, и битый URL = пустая обложка на телефоне.
+    // Рабочий URL из DOM — приоритетнее «красивого, но 404».
     return raw;
   }
 
